@@ -9,12 +9,14 @@ homepage: "https://github.com/ushitora-anqou/vahkane"
 doc: "https://github.com/ushitora-anqou/vahkane"
 bug-reports: "https://github.com/ushitora-anqou/vahkane/issues"
 depends: [
-  "ocaml" {>= "5.0"}
   "dune" {>= "3.16"}
-  "odoc" {with-doc}
-  "ocamlformat" {= "0.26.2" & with-dev-setup}
+  "eio"
+  "ocaml" {>= "5.0"}
   "ocaml-lsp-server" {with-dev-setup}
+  "ocamlformat" {= "0.26.2" & with-dev-setup}
+  "odoc" {with-doc}
   "ppx_deriving"
+  "yume"
 ]
 build: [
   ["dune" "subst"] {dev}
@@ -31,3 +33,6 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/ushitora-anqou/vahkane.git"
+pin-depends:[
+  [ "yume.0.1.9" "git+https://github.com/ushitora-anqou/yume.git#0.1.9" ]
+]

@@ -1,4 +1,4 @@
 (executable
  (public_name vahkane)
  (name main)
- (libraries vahkane))
+ (libraries eio eio_main vahkane yume))
