@@ -1,0 +1,4 @@
+(executable
+ (public_name vahkane)
+ (name main)
+ (libraries vahkane))
