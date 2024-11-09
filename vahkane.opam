@@ -11,6 +11,7 @@ bug-reports: "https://github.com/ushitora-anqou/vahkane/issues"
 depends: [
   "dune" {>= "3.16"}
   "eio"
+  "eio_main"
   "ocaml" {>= "5.0"}
   "ocaml-lsp-server" {with-dev-setup}
   "ocamlformat" {= "0.26.2" & with-dev-setup}
@@ -34,5 +35,5 @@ build: [
 ]
 dev-repo: "git+https://github.com/ushitora-anqou/vahkane.git"
 pin-depends:[
-  [ "yume.0.1.9" "git+https://github.com/ushitora-anqou/yume.git#0.1.9" ]
+  [ "yume.0.1.10" "git+https://github.com/ushitora-anqou/yume.git#0.1.10" ]
 ]
