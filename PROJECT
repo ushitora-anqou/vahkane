@@ -7,4 +7,13 @@ layout:
 - go.kubebuilder.io/v4
 projectName: vahkane
 repo: github.com/ushitora-anqou/vahkane
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: vahkane.anqou.net
+  kind: DiscordInteraction
+  path: github.com/ushitora-anqou/vahkane/api/v1
+  version: v1
 version: "3"
