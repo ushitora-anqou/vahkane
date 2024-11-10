@@ -1,0 +1,9 @@
+apiVersion: vahkane.anqou.net/v1
+kind: DiscordInteraction
+metadata:
+  labels:
+    app.kubernetes.io/name: vahkane
+    app.kubernetes.io/managed-by: kustomize
+  name: discordinteraction-sample
+spec:
+  # TODO(user): Add fields here

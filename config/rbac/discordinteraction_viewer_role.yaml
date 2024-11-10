@@ -1,32 +1,23 @@
----
+# permissions for end users to view discordinteractions.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: manager-role
+  labels:
+    app.kubernetes.io/name: vahkane
+    app.kubernetes.io/managed-by: kustomize
+  name: discordinteraction-viewer-role
 rules:
 - apiGroups:
   - vahkane.anqou.net
   resources:
   - discordinteractions
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
-- apiGroups:
-  - vahkane.anqou.net
-  resources:
-  - discordinteractions/finalizers
-  verbs:
-  - update
 - apiGroups:
   - vahkane.anqou.net
   resources:
   - discordinteractions/status
   verbs:
   - get
-  - patch
-  - update
