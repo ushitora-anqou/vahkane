@@ -27,3 +27,4 @@ go.work
 *~
 
 .env
+test/e2e/testdata/manifests.yaml
