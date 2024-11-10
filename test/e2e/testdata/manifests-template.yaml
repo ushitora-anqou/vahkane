@@ -41,6 +41,14 @@ spec:
           env:
             - name: DISCORD_APPLICATION_PUBLIC_KEY
               value: "{{DISCORD_APPLICATION_PUBLIC_KEY}}"
+            - name: DISCORD_APPLICATION_ID
+              value: "{{DISCORD_APPLICATION_ID}}"
+            - name: DISCORD_TOKEN
+              value: "{{DISCORD_TOKEN}}"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
       serviceAccountName: vahkane-controller
 ---
 apiVersion: v1
@@ -64,3 +72,17 @@ metadata:
   name: vahkane-controller
   namespace: e2e
 automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: manager-rolebinding
+  namespace: e2e
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: manager-role
+subjects:
+  - kind: ServiceAccount
+    name: vahkane-controller
+    namespace: e2e

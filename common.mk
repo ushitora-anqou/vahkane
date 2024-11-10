@@ -2,7 +2,7 @@ LOCALBIN ?= $(dir $(abspath $(lastword $(MAKEFILE_LIST))))/bin
 
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 ENVTEST_VERSION ?= release-0.19
-ENVTEST_K8S_VERSION = 1.31.0
+ENVTEST_K8S_VERSION = 1.30.2
 
 IMG ?= controller:latest
 
