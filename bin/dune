@@ -1,4 +1,4 @@
 (executable
  (public_name vahkane)
  (name main)
- (libraries eio eio_main vahkane yume))
+ (libraries cmdliner eio eio_main hex logs logs.fmt mirage-crypto-rng mirage-crypto-rng-eio vahkane yojson yume))

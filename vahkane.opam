@@ -9,14 +9,19 @@ homepage: "https://github.com/ushitora-anqou/vahkane"
 doc: "https://github.com/ushitora-anqou/vahkane"
 bug-reports: "https://github.com/ushitora-anqou/vahkane/issues"
 depends: [
+  "cmdliner"
   "dune" {>= "3.16"}
   "eio"
   "eio_main"
+  "fmt"
+  "hex"
+  "logs"
   "ocaml" {>= "5.0"}
   "ocaml-lsp-server" {with-dev-setup}
   "ocamlformat" {= "0.26.2" & with-dev-setup}
   "odoc" {with-doc}
   "ppx_deriving"
+  "yojson"
   "yume"
 ]
 build: [
