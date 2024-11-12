@@ -6,12 +6,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
+	vahkanev1 "github.com/ushitora-anqou/vahkane/api/v1"
+	"github.com/ushitora-anqou/vahkane/internal/controller"
+	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -65,6 +69,15 @@ func (r *DiscordWebhookServerRunner) handleApplicationCommand(
 		return err
 	}
 
+	di, err := r.fetchDiscordInteractionByGuildID(req.GuildID)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to fetch DiscordInteraction by guild id: %w: %s",
+			err,
+			body,
+		)
+	}
+
 	var resp struct {
 		Type int `json:"type"`
 		Data struct {
@@ -72,7 +85,7 @@ func (r *DiscordWebhookServerRunner) handleApplicationCommand(
 		} `json:"data"`
 	}
 	resp.Type = 4
-	resp.Data.Content = "foobar"
+	resp.Data.Content = di.Name
 
 	if err := respondJSON(w, &resp); err != nil {
 		return err
@@ -189,4 +202,25 @@ func respondJSON(w http.ResponseWriter, v interface{}) error {
 		return err
 	}
 	return nil
+}
+
+func (r *DiscordWebhookServerRunner) fetchDiscordInteractionByGuildID(
+	guildID string,
+) (*vahkanev1.DiscordInteraction, error) {
+	var diList vahkanev1.DiscordInteractionList
+	if err := r.k8sClient.List(
+		context.Background(),
+		&diList,
+		&client.ListOptions{
+			LabelSelector: labels.SelectorFromSet(
+				map[string]string{controller.LabelKeyDiscordGuildID: guildID},
+			),
+		},
+	); err != nil {
+		return nil, err
+	}
+	if len(diList.Items) != 1 {
+		return nil, fmt.Errorf("unexpected number of DiscordInteractions: %d", len(diList.Items))
+	}
+	return &diList.Items[0], nil
 }

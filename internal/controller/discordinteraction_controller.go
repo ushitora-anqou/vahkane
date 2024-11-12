@@ -18,7 +18,7 @@ import (
 const (
 	annotKeyCommands       = "vahkane.anqou.net/commands"
 	annotKeyActions        = "vahkane.anqou.net/actions"
-	labelKeyDiscordGuildID = "vahkane.anqou.net/discord-guild-id"
+	LabelKeyDiscordGuildID = "vahkane.anqou.net/discord-guild-id"
 )
 
 // DiscordInteractionReconciler reconciles a DiscordInteraction object
@@ -85,7 +85,7 @@ func (r *DiscordInteractionReconciler) reconcileDiscordInteraction(
 
 	var guildIDUpdated, commandsUpdated bool
 
-	guildID, ok := di.GetLabels()[labelKeyDiscordGuildID]
+	guildID, ok := di.GetLabels()[LabelKeyDiscordGuildID]
 	if !ok || di.Spec.GuildID != guildID {
 		guildIDUpdated = true
 	}
@@ -104,14 +104,14 @@ func (r *DiscordInteractionReconciler) reconcileDiscordInteraction(
 		if labels == nil {
 			labels = map[string]string{}
 		}
-		labels[labelKeyDiscordGuildID] = di.Spec.GuildID
+		labels[LabelKeyDiscordGuildID] = di.Spec.GuildID
 		di.SetLabels(labels)
 
 		annots := di.GetAnnotations()
 		if annots == nil {
 			annots = map[string]string{}
 		}
-		annots[annotKeyCommands] = string(currentCommandsJSON)
+		annots[annotKeyCommands] = currentCommandsJSON
 		di.SetAnnotations(annots)
 
 		if err := r.Client.Update(ctx, di); err != nil {
