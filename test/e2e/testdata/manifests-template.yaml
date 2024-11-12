@@ -45,6 +45,8 @@ spec:
               value: "{{DISCORD_APPLICATION_ID}}"
             - name: DISCORD_TOKEN
               value: "{{DISCORD_TOKEN}}"
+            - name: DISCORD_WEBHOOK_SERVER_LISTEN
+              value: "0.0.0.0:38000"
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:

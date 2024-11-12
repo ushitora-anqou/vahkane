@@ -89,6 +89,11 @@ func doMain() error {
 		return errors.New("set DISCORD_TOKEN")
 	}
 
+	discordWebhookServerListenAddr, ok := os.LookupEnv("DISCORD_WEBHOOK_SERVER_LISTEN")
+	if !ok {
+		return errors.New("set DISCORD_WEBHOOK_SERVER_LISTEN")
+	}
+
 	namespace, ok := os.LookupEnv("POD_NAMESPACE")
 	if !ok {
 		return errors.New("set POD_NAMESPACE")
@@ -179,6 +184,7 @@ func doMain() error {
 			mgr.GetClient(),
 			mgr.GetLogger().WithName("DiscordWebhookServerRunner"),
 			discordApplicationPublicKeyParsed,
+			discordWebhookServerListenAddr,
 		),
 	)
 	if err != nil {

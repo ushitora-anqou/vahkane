@@ -16,20 +16,23 @@ import (
 )
 
 type DiscordWebhookServerRunner struct {
-	k8sClient client.Client
-	logger    logr.Logger
-	publicKey ed25519.PublicKey
+	k8sClient  client.Client
+	logger     logr.Logger
+	publicKey  ed25519.PublicKey
+	listenAddr string
 }
 
 func NewDiscordWebhookServerRunner(
 	k8sClient client.Client,
 	logger logr.Logger,
 	publicKey ed25519.PublicKey,
+	listenAddr string,
 ) *DiscordWebhookServerRunner {
 	return &DiscordWebhookServerRunner{
-		k8sClient: k8sClient,
-		logger:    logger,
-		publicKey: publicKey,
+		k8sClient:  k8sClient,
+		logger:     logger,
+		publicKey:  publicKey,
+		listenAddr: listenAddr,
 	}
 }
 
@@ -141,9 +144,8 @@ func (r *DiscordWebhookServerRunner) Start(ctx context.Context) error {
 		}
 	})
 
-	addr := "0.0.0.0:38000"
 	srv := http.Server{
-		Addr:           addr,
+		Addr:           r.listenAddr,
 		ReadTimeout:    10 * time.Second,
 		WriteTimeout:   10 * time.Second,
 		MaxHeaderBytes: 1 << 20,
@@ -156,7 +158,7 @@ func (r *DiscordWebhookServerRunner) Start(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		r.logger.Info("starting discord webhook server", "addr", addr)
+		r.logger.Info("starting discord webhook server", "addr", r.listenAddr)
 		if err := srv.ListenAndServe(); err != nil {
 			r.logger.Error(err, "failed to start http server")
 		}
