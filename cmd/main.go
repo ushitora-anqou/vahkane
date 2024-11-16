@@ -179,12 +179,22 @@ func doMain() error {
 	}
 	// +kubebuilder:scaffold:builder
 
+	if err = controller.NewJobReconciler(
+		mgr.GetClient(),
+		mgr.GetScheme(),
+		namespace,
+		discord.NewClient(discordApplicationID, discordToken),
+	).SetupWithManager(mgr); err != nil {
+		return errors.New("unable to create controller: Job")
+	}
+
 	err = mgr.Add(
 		runner.NewDiscordWebhookServerRunner(
 			mgr.GetClient(),
 			mgr.GetLogger().WithName("DiscordWebhookServerRunner"),
 			discordApplicationPublicKeyParsed,
 			discordWebhookServerListenAddr,
+			namespace,
 		),
 	)
 	if err != nil {

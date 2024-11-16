@@ -1,7 +1,9 @@
 package discord
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,38 +23,122 @@ func NewClient(applicationID, token string) *Client {
 	}
 }
 
-func (c *Client) RegisterGuildCommands(
-	ctx context.Context,
-	guildID string,
-	commandsJSON string,
-) error {
-	endpoint := fmt.Sprintf(
-		"https://discord.com/api/v10/applications/%s/guilds/%s/commands",
-		c.applicationID,
-		guildID,
-	)
-
-	req, err := http.NewRequestWithContext(
-		ctx, "POST", endpoint, strings.NewReader(commandsJSON))
-	if err != nil {
-		return err
-	}
+func (c *Client) sendRequest(req *http.Request) ([]byte, error) {
 	req.Header.Add("user-agent", "vahkane")
 	req.Header.Add("content-type", "application/json")
 	req.Header.Add("authorization", "Bot "+c.token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("fail to register: %s: %s", resp.Status, string(body))
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fail to send request: %s: %s", resp.Status, body)
 	}
 
-	return nil
+	return body, nil
+}
+
+func (c *Client) SendFollowupMessage(
+	ctx context.Context,
+	interactionToken, message string,
+) error {
+	endpoint := fmt.Sprintf(
+		"https://discord.com/api/v10/webhooks/%s/%s",
+		c.applicationID,
+		interactionToken,
+	)
+
+	body, err := json.Marshal(map[string]interface{}{
+		"content": message,
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+
+	_, err = c.sendRequest(req)
+	return err
+}
+
+func (c *Client) GetGuildCommands(
+	ctx context.Context,
+	guildID string,
+) ([]map[string]interface{}, error) {
+	// cf. https://discord.com/developers/docs/interactions/application-commands#create-guild-application-command
+
+	endpoint := fmt.Sprintf(
+		"https://discord.com/api/v10/applications/%s/guilds/%s/commands",
+		c.applicationID,
+		guildID,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, strings.NewReader(""))
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := c.sendRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	parsedBody := []map[string]interface{}{}
+	if err := json.Unmarshal(body, &parsedBody); err != nil {
+		return nil, err
+	}
+
+	return parsedBody, nil
+}
+
+func (c *Client) RegisterGuildCommands(
+	ctx context.Context,
+	guildID string,
+	commandsJSON string,
+) error {
+	// cf. https://discord.com/developers/docs/interactions/application-commands#create-guild-application-command
+
+	endpoint := fmt.Sprintf(
+		"https://discord.com/api/v10/applications/%s/guilds/%s/commands",
+		c.applicationID,
+		guildID,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, strings.NewReader(commandsJSON))
+	if err != nil {
+		return err
+	}
+
+	_, err = c.sendRequest(req)
+	return err
+}
+
+func (c *Client) DeleteGuildCommand(
+	ctx context.Context,
+	guildID, commandID string,
+) error {
+	endpoint := fmt.Sprintf(
+		"https://discord.com/api/v10/applications/%s/guilds/%s/commands/%s",
+		c.applicationID,
+		guildID,
+		commandID,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, "DELETE", endpoint, strings.NewReader(""))
+	if err != nil {
+		return err
+	}
+
+	_, err = c.sendRequest(req)
+	return err
 }

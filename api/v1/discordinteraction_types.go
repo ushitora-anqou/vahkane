@@ -13,6 +13,7 @@ type DiscordInteractionActionInline struct {
 }
 
 type DiscordInteractionAction struct {
+	Name         string                         `json:"name"`
 	ActionInline DiscordInteractionActionInline `json:"actionInline"`
 	Pattern      string                         `json:"pattern"`
 }
@@ -24,7 +25,7 @@ type DiscordInteractionSpec struct {
 
 	GuildID  string                     `json:"guildID"`
 	Actions  []DiscordInteractionAction `json:"actions"`
-	Commands string                     `json:"commands"`
+	Commands []string                   `json:"commands"`
 }
 
 // DiscordInteractionStatus defines the observed state of DiscordInteraction.

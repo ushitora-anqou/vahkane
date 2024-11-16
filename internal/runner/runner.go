@@ -15,28 +15,38 @@ import (
 	"github.com/go-logr/logr"
 	vahkanev1 "github.com/ushitora-anqou/vahkane/api/v1"
 	"github.com/ushitora-anqou/vahkane/internal/controller"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	annotKeyDiscordInteraction = "vahkane.anqou.net/discord-interaction"
+	annotKeyAction             = "vahkane.anqou.net/action"
+)
+
 type DiscordWebhookServerRunner struct {
-	k8sClient  client.Client
-	logger     logr.Logger
-	publicKey  ed25519.PublicKey
-	listenAddr string
+	k8sClient             client.Client
+	logger                logr.Logger
+	publicKey             ed25519.PublicKey
+	listenAddr, namespace string
 }
 
 func NewDiscordWebhookServerRunner(
 	k8sClient client.Client,
 	logger logr.Logger,
 	publicKey ed25519.PublicKey,
-	listenAddr string,
+	listenAddr, namespace string,
 ) *DiscordWebhookServerRunner {
 	return &DiscordWebhookServerRunner{
 		k8sClient:  k8sClient,
 		logger:     logger,
 		publicKey:  publicKey,
 		listenAddr: listenAddr,
+		namespace:  namespace,
 	}
 }
 
@@ -64,12 +74,17 @@ func (r *DiscordWebhookServerRunner) handleApplicationCommand(
 		Data      interface{} `json:"data"`
 		GuildID   string      `json:"guild_id"`
 		ChannelID string      `json:"channel_id"`
+		Token     string      `json:"token"`
+		ID        string      `json:"id"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		return err
 	}
 
-	di, err := r.fetchDiscordInteractionByGuildID(req.GuildID)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	di, err := r.fetchDiscordInteractionByGuildID(ctx, req.GuildID)
 	if err != nil {
 		return fmt.Errorf(
 			"failed to fetch DiscordInteraction by guild id: %w: %s",
@@ -78,20 +93,35 @@ func (r *DiscordWebhookServerRunner) handleApplicationCommand(
 		)
 	}
 
-	var resp struct {
-		Type int `json:"type"`
-		Data struct {
-			Content string `json:"content"`
-		} `json:"data"`
-	}
-	resp.Type = 4
-	resp.Data.Content = di.Name
-
-	if err := respondJSON(w, &resp); err != nil {
-		return err
+	action, err := matchActions(di.Spec.Actions, req.Data)
+	if err != nil {
+		return fmt.Errorf("failed to match actions: %w", err)
 	}
 
-	return nil
+	exist, err := doesJobAlreadyExist(ctx, r.k8sClient, action, di.Name, r.namespace)
+	if err != nil {
+		return fmt.Errorf("failed to check if Job already exists: %w", err)
+	}
+	if exist {
+		if err := respondAlreadyRunning(w); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if err := createJobForAction(
+		ctx,
+		r.k8sClient,
+		action,
+		di.Name,
+		r.namespace,
+		req.ID,
+		req.Token,
+	); err != nil {
+		return fmt.Errorf("failed to create Job for Action: %w", err)
+	}
+
+	return respondQueued(w)
 }
 
 func (r *DiscordWebhookServerRunner) handleWebhook(
@@ -192,24 +222,13 @@ func (r DiscordWebhookServerRunner) NeedLeaderElection() bool {
 	return true
 }
 
-func respondJSON(w http.ResponseWriter, v interface{}) error {
-	json, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	w.Header().Add("Content-Type", "application/json")
-	if _, err := w.Write(json); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (r *DiscordWebhookServerRunner) fetchDiscordInteractionByGuildID(
+	ctx context.Context,
 	guildID string,
 ) (*vahkanev1.DiscordInteraction, error) {
 	var diList vahkanev1.DiscordInteractionList
 	if err := r.k8sClient.List(
-		context.Background(),
+		ctx,
 		&diList,
 		&client.ListOptions{
 			LabelSelector: labels.SelectorFromSet(
@@ -223,4 +242,102 @@ func (r *DiscordWebhookServerRunner) fetchDiscordInteractionByGuildID(
 		return nil, fmt.Errorf("unexpected number of DiscordInteractions: %d", len(diList.Items))
 	}
 	return &diList.Items[0], nil
+}
+
+func respondJSON(w http.ResponseWriter, v interface{}) error {
+	json, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	w.Header().Add("Content-Type", "application/json")
+	if _, err := w.Write(json); err != nil {
+		return err
+	}
+	return nil
+}
+
+func respondQueued(w http.ResponseWriter) error {
+	var resp struct {
+		Type int `json:"type"`
+		Data struct {
+			Content string `json:"content"`
+		} `json:"data"`
+	}
+	resp.Type = 4
+	resp.Data.Content = "queued"
+	return respondJSON(w, &resp)
+}
+
+func respondAlreadyRunning(w http.ResponseWriter) error {
+	var resp struct {
+		Type int `json:"type"`
+		Data struct {
+			Content string `json:"content"`
+		} `json:"data"`
+	}
+	resp.Type = 4
+	resp.Data.Content = "already running"
+	return respondJSON(w, &resp)
+}
+
+func doesJobAlreadyExist(
+	ctx context.Context,
+	k8sClient client.Client,
+	action *vahkanev1.DiscordInteractionAction,
+	diName, namespace string,
+) (bool, error) {
+	var job batchv1.Job
+	if err := k8sClient.Get(
+		ctx,
+		types.NamespacedName{Name: makeJobName(diName, action), Namespace: namespace},
+		&job,
+	); err != nil {
+		if k8serrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get Job: %w", err)
+	}
+	return true, nil
+}
+
+func createJobForAction(
+	ctx context.Context,
+	k8sClient client.Client,
+	action *vahkanev1.DiscordInteractionAction,
+	diName, namespace, interactionID, interactionToken string,
+) error {
+	var job batchv1.Job
+
+	job.Spec = action.ActionInline.JobTemplate.Spec
+	job.ObjectMeta = action.ActionInline.JobTemplate.ObjectMeta
+	job.ObjectMeta.Namespace = namespace
+	job.ObjectMeta.Name = makeJobName(diName, action)
+	job.Spec.Template.Spec.RestartPolicy = corev1.RestartPolicyNever
+
+	labels := job.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[controller.LabelKeyJob] = "true"
+	job.SetLabels(labels)
+
+	annots := job.GetAnnotations()
+	if annots == nil {
+		annots = map[string]string{}
+	}
+	annots[annotKeyDiscordInteraction] = diName
+	annots[annotKeyAction] = action.Name
+	annots[controller.AnnotKeyDiscordInteractionID] = interactionID
+	annots[controller.AnnotKeyDiscordInteractionToken] = interactionToken
+	job.SetAnnotations(annots)
+
+	if err := k8sClient.Create(ctx, &job); err != nil {
+		return fmt.Errorf(
+			"failed to create job: %s: %s: %w",
+			job.ObjectMeta.Name,
+			job.ObjectMeta.Namespace,
+			err,
+		)
+	}
+	return nil
 }

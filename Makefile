@@ -1,5 +1,3 @@
-include common.mk
-
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -50,3 +48,5 @@ run: generate fmt lint ## Run a controller from your host.
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
 	docker build -t ${IMG} .
+
+include common.mk

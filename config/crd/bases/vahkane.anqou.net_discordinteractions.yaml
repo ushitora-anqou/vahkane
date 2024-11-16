@@ -3734,15 +3734,20 @@ spec:
                       required:
                       - jobTemplate
                       type: object
+                    name:
+                      type: string
                     pattern:
                       type: string
                   required:
                   - actionInline
+                  - name
                   - pattern
                   type: object
                 type: array
               commands:
-                type: string
+                items:
+                  type: string
+                type: array
               guildID:
                 type: string
             required:

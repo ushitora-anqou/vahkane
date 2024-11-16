@@ -3,11 +3,14 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
 
@@ -16,10 +19,12 @@ import (
 )
 
 const (
-	annotKeyCommands       = "vahkane.anqou.net/commands"
-	annotKeyActions        = "vahkane.anqou.net/actions"
-	LabelKeyDiscordGuildID = "vahkane.anqou.net/discord-guild-id"
+	annotKeyCommands            = "vahkane.anqou.net/commands"
+	LabelKeyDiscordGuildID      = "vahkane.anqou.net/discord-guild-id"
+	finalizerDiscordInteraction = "vahkane.anqou.net/discord-interaction"
 )
+
+var errRequeue = errors.New("requeue")
 
 // DiscordInteractionReconciler reconciles a DiscordInteraction object
 type DiscordInteractionReconciler struct {
@@ -59,10 +64,16 @@ func NewDiscordInteractionReconciler(
 func (r *DiscordInteractionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var di vahkanev1.DiscordInteraction
 	if err := r.Client.Get(ctx, req.NamespacedName, &di); err != nil {
+		if k8serrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileDiscordInteraction(ctx, &di); err != nil {
+	if err := r.doReconcile(ctx, &di); err != nil {
+		if errors.Is(err, errRequeue) {
+			return ctrl.Result{Requeue: true}, nil
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -77,11 +88,15 @@ func (r *DiscordInteractionReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Complete(r)
 }
 
-func (r *DiscordInteractionReconciler) reconcileDiscordInteraction(
+func (r *DiscordInteractionReconciler) doReconcile(
 	ctx context.Context,
 	di *vahkanev1.DiscordInteraction,
 ) error {
 	logger := log.FromContext(ctx)
+
+	if err := r.handleFinalizer(ctx, di); err != nil {
+		return err
+	}
 
 	var guildIDUpdated, commandsUpdated bool
 
@@ -90,7 +105,7 @@ func (r *DiscordInteractionReconciler) reconcileDiscordInteraction(
 		guildIDUpdated = true
 	}
 
-	currentCommandsJSON, err := convertYAMLToJSON(di.Spec.Commands)
+	currentCommandsJSON, err := convertYAMLToJSON(di.Spec.Commands[0])
 	if err != nil {
 		return err
 	}
@@ -121,6 +136,9 @@ func (r *DiscordInteractionReconciler) reconcileDiscordInteraction(
 
 	if commandsUpdated {
 		logger.Info("register Discord guild commands", "guild_id", di.Spec.GuildID)
+		if err := deleteAllGuildCommands(ctx, r.discordClient, di.Spec.GuildID); err != nil {
+			return err
+		}
 		if err := r.discordClient.RegisterGuildCommands(
 			ctx,
 			di.Spec.GuildID,
@@ -128,6 +146,36 @@ func (r *DiscordInteractionReconciler) reconcileDiscordInteraction(
 		); err != nil {
 			return fmt.Errorf("failed to register Discord guild commands: %w", err)
 		}
+	}
+
+	return nil
+}
+
+func (r *DiscordInteractionReconciler) handleFinalizer(
+	ctx context.Context,
+	di *vahkanev1.DiscordInteraction,
+) error {
+	logger := log.FromContext(ctx)
+
+	if !di.GetDeletionTimestamp().IsZero() {
+		logger.Info("unregister Discord guild commands", "guild_id", di.Spec.GuildID)
+		if err := deleteAllGuildCommands(ctx, r.discordClient, di.Spec.GuildID); err != nil {
+			return fmt.Errorf("failed to delete guild commands: %w", err)
+		}
+
+		controllerutil.RemoveFinalizer(di, finalizerDiscordInteraction)
+		if err := r.Client.Update(ctx, di); err != nil {
+			return fmt.Errorf("failed to attach finalizer: %w", err)
+		}
+		return errRequeue
+	}
+
+	if !controllerutil.ContainsFinalizer(di, finalizerDiscordInteraction) {
+		controllerutil.AddFinalizer(di, finalizerDiscordInteraction)
+		if err := r.Client.Update(ctx, di); err != nil {
+			return fmt.Errorf("failed to attach finalizer: %w", err)
+		}
+		return errRequeue
 	}
 
 	return nil
@@ -143,4 +191,22 @@ func convertYAMLToJSON(src string) (string, error) {
 		return "", err
 	}
 	return string(json), nil
+}
+
+func deleteAllGuildCommands(ctx context.Context, client *discord.Client, guildID string) error {
+	commands, err := client.GetGuildCommands(ctx, guildID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch guild commands: %w", err)
+	}
+	for _, command := range commands {
+		id, ok1 := command["id"]
+		idParsed, ok2 := id.(string)
+		if !ok1 || !ok2 {
+			return fmt.Errorf("failed to get command id")
+		}
+		if err := client.DeleteGuildCommand(ctx, guildID, idParsed); err != nil {
+			return fmt.Errorf("failed to delete guild commands: %w", err)
+		}
+	}
+	return nil
 }
