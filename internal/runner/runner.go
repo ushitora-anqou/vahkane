@@ -15,6 +15,7 @@ import (
 	"github.com/go-logr/logr"
 	vahkanev1 "github.com/ushitora-anqou/vahkane/api/v1"
 	"github.com/ushitora-anqou/vahkane/internal/controller"
+	"github.com/ushitora-anqou/vahkane/internal/discord"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,6 +31,7 @@ const (
 
 type DiscordWebhookServerRunner struct {
 	k8sClient             client.Client
+	discordClient         *discord.Client
 	logger                logr.Logger
 	publicKey             ed25519.PublicKey
 	listenAddr, namespace string
@@ -37,16 +39,18 @@ type DiscordWebhookServerRunner struct {
 
 func NewDiscordWebhookServerRunner(
 	k8sClient client.Client,
+	discordClient *discord.Client,
 	logger logr.Logger,
 	publicKey ed25519.PublicKey,
 	listenAddr, namespace string,
 ) *DiscordWebhookServerRunner {
 	return &DiscordWebhookServerRunner{
-		k8sClient:  k8sClient,
-		logger:     logger,
-		publicKey:  publicKey,
-		listenAddr: listenAddr,
-		namespace:  namespace,
+		k8sClient:     k8sClient,
+		discordClient: discordClient,
+		logger:        logger,
+		publicKey:     publicKey,
+		listenAddr:    listenAddr,
+		namespace:     namespace,
 	}
 }
 
@@ -66,62 +70,37 @@ func (r *DiscordWebhookServerRunner) verifyRequest(header http.Header, body []by
 	return ed25519.Verify(r.publicKey, message, signature), nil
 }
 
+type requestApplicationCommand struct {
+	Data      interface{} `json:"data"`
+	GuildID   string      `json:"guild_id"`
+	ChannelID string      `json:"channel_id"`
+	Token     string      `json:"token"`
+	ID        string      `json:"id"`
+}
+
 func (r *DiscordWebhookServerRunner) handleApplicationCommand(
 	w http.ResponseWriter,
 	body []byte,
 ) error {
-	var req struct {
-		Data      interface{} `json:"data"`
-		GuildID   string      `json:"guild_id"`
-		ChannelID string      `json:"channel_id"`
-		Token     string      `json:"token"`
-		ID        string      `json:"id"`
-	}
+	var req requestApplicationCommand
 	if err := json.Unmarshal(body, &req); err != nil {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	di, err := r.fetchDiscordInteractionByGuildID(ctx, req.GuildID)
-	if err != nil {
-		return fmt.Errorf(
-			"failed to fetch DiscordInteraction by guild id: %w: %s",
-			err,
-			body,
-		)
-	}
-
-	action, err := matchActions(di.Spec.Actions, req.Data)
-	if err != nil {
-		return fmt.Errorf("failed to match actions: %w", err)
-	}
-
-	exist, err := doesJobAlreadyExist(ctx, r.k8sClient, action, di.Name, r.namespace)
-	if err != nil {
-		return fmt.Errorf("failed to check if Job already exists: %w", err)
-	}
-	if exist {
-		if err := respondAlreadyRunning(w); err != nil {
-			return err
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		msg := ":ok: successfully queued your job"
+		if err := queueJobByRequest(ctx, r.k8sClient, r.namespace, &req); err != nil {
+			r.logger.Error(err, "failed to queue job: "+string(body))
+			msg = ":x: failed to queue your job"
 		}
-		return nil
-	}
+		if err := r.discordClient.SendFollowupMessage(ctx, req.Token, msg); err != nil {
+			r.logger.Error(err, "failed to send followup message", "message", msg)
+		}
+	}()
 
-	if err := createJobForAction(
-		ctx,
-		r.k8sClient,
-		action,
-		di.Name,
-		r.namespace,
-		req.ID,
-		req.Token,
-	); err != nil {
-		return fmt.Errorf("failed to create Job for Action: %w", err)
-	}
-
-	return respondQueued(w)
+	return respondDeferred(w)
 }
 
 func (r *DiscordWebhookServerRunner) handleWebhook(
@@ -222,12 +201,13 @@ func (r DiscordWebhookServerRunner) NeedLeaderElection() bool {
 	return true
 }
 
-func (r *DiscordWebhookServerRunner) fetchDiscordInteractionByGuildID(
+func fetchDiscordInteractionByGuildID(
 	ctx context.Context,
+	k8sClient client.Client,
 	guildID string,
 ) (*vahkanev1.DiscordInteraction, error) {
 	var diList vahkanev1.DiscordInteractionList
-	if err := r.k8sClient.List(
+	if err := k8sClient.List(
 		ctx,
 		&diList,
 		&client.ListOptions{
@@ -256,15 +236,11 @@ func respondJSON(w http.ResponseWriter, v interface{}) error {
 	return nil
 }
 
-func respondQueued(w http.ResponseWriter) error {
+func respondDeferred(w http.ResponseWriter) error {
 	var resp struct {
 		Type int `json:"type"`
-		Data struct {
-			Content string `json:"content"`
-		} `json:"data"`
 	}
-	resp.Type = 4
-	resp.Data.Content = "queued"
+	resp.Type = 5
 	return respondJSON(w, &resp)
 }
 
@@ -304,7 +280,7 @@ func createJobForAction(
 	ctx context.Context,
 	k8sClient client.Client,
 	action *vahkanev1.DiscordInteractionAction,
-	diName, namespace, interactionID, interactionToken string,
+	diName, namespace, interactionToken string,
 ) error {
 	var job batchv1.Job
 
@@ -327,7 +303,6 @@ func createJobForAction(
 	}
 	annots[annotKeyDiscordInteraction] = diName
 	annots[annotKeyAction] = action.Name
-	annots[controller.AnnotKeyDiscordInteractionID] = interactionID
 	annots[controller.AnnotKeyDiscordInteractionToken] = interactionToken
 	job.SetAnnotations(annots)
 
@@ -339,5 +314,36 @@ func createJobForAction(
 			err,
 		)
 	}
+	return nil
+}
+
+func queueJobByRequest(
+	ctx context.Context,
+	k8sClient client.Client,
+	namespace string,
+	req *requestApplicationCommand,
+) error {
+	di, err := fetchDiscordInteractionByGuildID(ctx, k8sClient, req.GuildID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch DiscordInteraction by guild id: %w", err)
+	}
+
+	action, err := matchActions(di.Spec.Actions, req.Data)
+	if err != nil {
+		return fmt.Errorf("failed to match actions: %w", err)
+	}
+
+	exist, err := doesJobAlreadyExist(ctx, k8sClient, action, di.Name, namespace)
+	if err != nil {
+		return fmt.Errorf("failed to check if Job already exists: %w", err)
+	}
+	if exist {
+		return errors.New("already running")
+	}
+
+	if err := createJobForAction(ctx, k8sClient, action, di.Name, namespace, req.Token); err != nil {
+		return fmt.Errorf("failed to create Job for Action: %w", err)
+	}
+
 	return nil
 }

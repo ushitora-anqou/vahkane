@@ -17,7 +17,6 @@ import (
 
 const (
 	LabelKeyJob                     = "vahkane.anqou.net/job"
-	AnnotKeyDiscordInteractionID    = "vahkane.anqou.net/discord-interaction-id"
 	AnnotKeyDiscordInteractionToken = "vahkane.anqou.net/discord-interaction-token"
 )
 
@@ -84,18 +83,13 @@ func (r *JobReconciler) reconcileJob(ctx context.Context, job *batchv1.Job) erro
 		msg = "failed"
 	}
 
-	discordInteractionID := job.GetAnnotations()[AnnotKeyDiscordInteractionID]
 	discordInteractionToken := job.GetAnnotations()[AnnotKeyDiscordInteractionToken]
 	if err := r.discordClient.SendFollowupMessage(
 		ctx,
 		discordInteractionToken,
 		msg,
 	); err != nil {
-		logger.Error(
-			err,
-			"failed to send followup messages",
-			"interactionID", discordInteractionID,
-		)
+		logger.Error(err, "failed to send followup messages")
 	}
 
 	propagationPolicy := metav1.DeletePropagationBackground

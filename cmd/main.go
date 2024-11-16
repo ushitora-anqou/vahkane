@@ -191,6 +191,7 @@ func doMain() error {
 	err = mgr.Add(
 		runner.NewDiscordWebhookServerRunner(
 			mgr.GetClient(),
+			discord.NewClient(discordApplicationID, discordToken),
 			mgr.GetLogger().WithName("DiscordWebhookServerRunner"),
 			discordApplicationPublicKeyParsed,
 			discordWebhookServerListenAddr,
