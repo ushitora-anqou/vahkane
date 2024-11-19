@@ -4,10 +4,13 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 ENVTEST_VERSION ?= release-0.19
 ENVTEST_K8S_VERSION = 1.30.2
 
+MOCKGEN ?= $(LOCALBIN)/mockgen
+MOCKGEN_VERSION ?= v0.5.0
+
 IMG ?= controller:latest
 
 .PHONY: setup
-setup: envtest
+setup: envtest mockgen
 	@command -v aqua > /dev/null || { \
 		echo "Install aqua. See https://aquaproj.github.io/docs/install" ;\
 		exit 1 ;\
@@ -21,6 +24,11 @@ $(LOCALBIN):
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
+
+.PHONY: mockgen
+mockgen: $(MOCKGEN)
+$(MOCKGEN): $(LOCALBIN)
+	$(call go-install-tool,$(MOCKGEN),go.uber.org/mock/mockgen,$(MOCKGEN_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
@@ -37,4 +45,3 @@ mv $(1) $(1)-$(3) ;\
 } ;\
 ln -sf $(1)-$(3) $(1)
 endef
-

@@ -25,6 +25,16 @@ b:
     foo: bar
 hoge: piyo
 `, shouldMatch: true},
+		{pattern: `{ "a": "b" }`, data: `{ "a": "c" }`, shouldMatch: false},
+		{pattern: `
+a:
+  - b: c
+    d: e
+  `, data: `
+a:
+  - b: c
+    d: f
+`, shouldMatch: false},
 	}
 
 	for _, e := range table {

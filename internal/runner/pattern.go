@@ -37,25 +37,31 @@ func doesPatternMatch(pattern interface{}, data interface{}) bool {
 		switch pattern := head.pattern.(type) {
 		case string:
 			data, ok := head.data.(string)
-			return ok && pattern == data
+			if !ok || pattern != data {
+				return false
+			}
 		case int:
 			data, ok := head.data.(int)
-			return ok && pattern == data
+			if !ok || pattern != data {
+				return false
+			}
 		case float64:
 			data, ok := head.data.(float64)
-			return ok && pattern == data
+			if !ok || pattern != data {
+				return false
+			}
 
 		case map[string]interface{}:
 			data, ok := head.data.(map[string]interface{})
 			if !ok {
 				return false
 			}
-			for key, valuePattern := range pattern {
+			for key := range pattern {
 				valueData, ok := data[key]
 				if !ok {
 					return false
 				}
-				queue = append(queue, element{pattern: valuePattern, data: valueData})
+				queue = append(queue, element{pattern: pattern[key], data: valueData})
 			}
 
 		case []interface{}:

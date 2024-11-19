@@ -10,20 +10,29 @@ import (
 	"strings"
 )
 
-type Client struct {
+//go:generate ../../bin/mockgen -source=$GOFILE -package=$GOPACKAGE -destination=mock_$GOFILE
+
+type Client interface {
+	SendFollowupMessage(ctx context.Context, interactionToken, message string) error
+	GetGuildCommands(ctx context.Context, guildID string) ([]map[string]interface{}, error)
+	RegisterGuildCommand(ctx context.Context, guildID, commandsJSON string) error
+	DeleteGuildCommand(ctx context.Context, guildID, commandID string) error
+}
+
+type RealClient struct {
 	applicationID, token string
 	httpClient           *http.Client
 }
 
-func NewClient(applicationID, token string) *Client {
-	return &Client{
+func NewRealClient(applicationID, token string) Client {
+	return &RealClient{
 		applicationID: applicationID,
 		token:         token,
 		httpClient:    &http.Client{},
 	}
 }
 
-func (c *Client) sendRequest(req *http.Request) ([]byte, error) {
+func (c *RealClient) sendRequest(req *http.Request) ([]byte, error) {
 	req.Header.Add("user-agent", "vahkane")
 	req.Header.Add("content-type", "application/json")
 	req.Header.Add("authorization", "Bot "+c.token)
@@ -45,7 +54,7 @@ func (c *Client) sendRequest(req *http.Request) ([]byte, error) {
 	return body, nil
 }
 
-func (c *Client) SendFollowupMessage(
+func (c *RealClient) SendFollowupMessage(
 	ctx context.Context,
 	interactionToken, message string,
 ) error {
@@ -71,7 +80,7 @@ func (c *Client) SendFollowupMessage(
 	return err
 }
 
-func (c *Client) GetGuildCommands(
+func (c *RealClient) GetGuildCommands(
 	ctx context.Context,
 	guildID string,
 ) ([]map[string]interface{}, error) {
@@ -101,7 +110,7 @@ func (c *Client) GetGuildCommands(
 	return parsedBody, nil
 }
 
-func (c *Client) RegisterGuildCommands(
+func (c *RealClient) RegisterGuildCommand(
 	ctx context.Context,
 	guildID string,
 	commandsJSON string,
@@ -123,7 +132,7 @@ func (c *Client) RegisterGuildCommands(
 	return err
 }
 
-func (c *Client) DeleteGuildCommand(
+func (c *RealClient) DeleteGuildCommand(
 	ctx context.Context,
 	guildID, commandID string,
 ) error {

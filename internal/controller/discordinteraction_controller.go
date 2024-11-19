@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,14 +33,14 @@ type DiscordInteractionReconciler struct {
 	Client        client.Client
 	Scheme        *runtime.Scheme
 	namespace     string
-	discordClient *discord.Client
+	discordClient discord.Client
 }
 
 func NewDiscordInteractionReconciler(
 	client client.Client,
 	scheme *runtime.Scheme,
 	namespace string,
-	discordClient *discord.Client,
+	discordClient discord.Client,
 ) *DiscordInteractionReconciler {
 	return &DiscordInteractionReconciler{
 		Client:        client,
@@ -105,12 +107,15 @@ func (r *DiscordInteractionReconciler) doReconcile(
 		guildIDUpdated = true
 	}
 
-	currentCommandsJSON, err := convertYAMLToJSON(di.Spec.Commands[0])
-	if err != nil {
-		return err
+	// Check whether commands are updated or not
+	var commandsConcatenated bytes.Buffer
+	for _, command := range di.Spec.Commands {
+		commandsConcatenated.WriteString(command)
 	}
-	annotCommands, ok := di.GetAnnotations()[annotKeyCommands]
-	if !ok || currentCommandsJSON != annotCommands {
+	currentCommandsHashRaw := sha256.Sum224(commandsConcatenated.Bytes())
+	currentCommandsHash := string(currentCommandsHashRaw[:])
+	annotCommandsHash, ok := di.GetAnnotations()[annotKeyCommands]
+	if !ok || currentCommandsHash != annotCommandsHash {
 		commandsUpdated = true
 	}
 
@@ -126,7 +131,7 @@ func (r *DiscordInteractionReconciler) doReconcile(
 		if annots == nil {
 			annots = map[string]string{}
 		}
-		annots[annotKeyCommands] = currentCommandsJSON
+		annots[annotKeyCommands] = currentCommandsHash
 		di.SetAnnotations(annots)
 
 		if err := r.Client.Update(ctx, di); err != nil {
@@ -139,12 +144,18 @@ func (r *DiscordInteractionReconciler) doReconcile(
 		if err := deleteAllGuildCommands(ctx, r.discordClient, di.Spec.GuildID); err != nil {
 			return err
 		}
-		if err := r.discordClient.RegisterGuildCommands(
-			ctx,
-			di.Spec.GuildID,
-			currentCommandsJSON,
-		); err != nil {
-			return fmt.Errorf("failed to register Discord guild commands: %w", err)
+		for _, command := range di.Spec.Commands {
+			json, err := convertYAMLToJSON(command)
+			if err != nil {
+				return fmt.Errorf("failed to convert guild command YAML to JSON: %w", err)
+			}
+			if err := r.discordClient.RegisterGuildCommand(
+				ctx,
+				di.Spec.GuildID,
+				json,
+			); err != nil {
+				return fmt.Errorf("failed to register Discord guild commands: %w", err)
+			}
 		}
 	}
 
@@ -193,7 +204,7 @@ func convertYAMLToJSON(src string) (string, error) {
 	return string(json), nil
 }
 
-func deleteAllGuildCommands(ctx context.Context, client *discord.Client, guildID string) error {
+func deleteAllGuildCommands(ctx context.Context, client discord.Client, guildID string) error {
 	commands, err := client.GetGuildCommands(ctx, guildID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch guild commands: %w", err)

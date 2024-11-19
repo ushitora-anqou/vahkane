@@ -24,14 +24,14 @@ type JobReconciler struct {
 	Client        client.Client
 	Scheme        *runtime.Scheme
 	namespace     string
-	discordClient *discord.Client
+	discordClient discord.Client
 }
 
 func NewJobReconciler(
 	client client.Client,
 	scheme *runtime.Scheme,
 	namespace string,
-	discordClient *discord.Client,
+	discordClient discord.Client,
 ) *JobReconciler {
 	return &JobReconciler{
 		Client:        client,

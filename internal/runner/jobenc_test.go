@@ -8,7 +8,7 @@ import (
 
 func TestMakeJobName(t *testing.T) {
 	jobName := makeJobName("diName", &vahkanev1.DiscordInteractionAction{Name: "action"})
-	if jobName != "job-59nc-t8hpbbznshuxk3sj6464emuiu8eob6y08lsrn1" {
+	if jobName != "job-5c9aordx16dqd2mgii4bcliw986krokvd9e9oz4gt65" {
 		t.Errorf("makeJobName returns unexpected value: %s", jobName)
 	}
 }

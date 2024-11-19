@@ -173,7 +173,7 @@ func doMain() error {
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		namespace,
-		discord.NewClient(discordApplicationID, discordToken),
+		discord.NewRealClient(discordApplicationID, discordToken),
 	).SetupWithManager(mgr); err != nil {
 		return errors.New("unable to create controller: DiscordInteraction")
 	}
@@ -183,7 +183,7 @@ func doMain() error {
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		namespace,
-		discord.NewClient(discordApplicationID, discordToken),
+		discord.NewRealClient(discordApplicationID, discordToken),
 	).SetupWithManager(mgr); err != nil {
 		return errors.New("unable to create controller: Job")
 	}
@@ -191,7 +191,7 @@ func doMain() error {
 	err = mgr.Add(
 		runner.NewDiscordWebhookServerRunner(
 			mgr.GetClient(),
-			discord.NewClient(discordApplicationID, discordToken),
+			discord.NewRealClient(discordApplicationID, discordToken),
 			mgr.GetLogger().WithName("DiscordWebhookServerRunner"),
 			discordApplicationPublicKeyParsed,
 			discordWebhookServerListenAddr,

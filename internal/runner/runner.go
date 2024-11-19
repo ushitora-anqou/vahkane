@@ -31,7 +31,7 @@ const (
 
 type DiscordWebhookServerRunner struct {
 	k8sClient             client.Client
-	discordClient         *discord.Client
+	discordClient         discord.Client
 	logger                logr.Logger
 	publicKey             ed25519.PublicKey
 	listenAddr, namespace string
@@ -39,7 +39,7 @@ type DiscordWebhookServerRunner struct {
 
 func NewDiscordWebhookServerRunner(
 	k8sClient client.Client,
-	discordClient *discord.Client,
+	discordClient discord.Client,
 	logger logr.Logger,
 	publicKey ed25519.PublicKey,
 	listenAddr, namespace string,
@@ -91,7 +91,7 @@ func (r *DiscordWebhookServerRunner) handleApplicationCommand(
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		msg := ":ok: successfully queued your job"
-		if err := queueJobByRequest(ctx, r.k8sClient, r.namespace, &req); err != nil {
+		if err := queueJobByRequest(ctx, r.logger, r.k8sClient, r.namespace, &req); err != nil {
 			r.logger.Error(err, "failed to queue job: "+string(body))
 			msg = ":x: failed to queue your job"
 		}
@@ -244,18 +244,6 @@ func respondDeferred(w http.ResponseWriter) error {
 	return respondJSON(w, &resp)
 }
 
-func respondAlreadyRunning(w http.ResponseWriter) error {
-	var resp struct {
-		Type int `json:"type"`
-		Data struct {
-			Content string `json:"content"`
-		} `json:"data"`
-	}
-	resp.Type = 4
-	resp.Data.Content = "already running"
-	return respondJSON(w, &resp)
-}
-
 func doesJobAlreadyExist(
 	ctx context.Context,
 	k8sClient client.Client,
@@ -319,6 +307,7 @@ func createJobForAction(
 
 func queueJobByRequest(
 	ctx context.Context,
+	logger logr.Logger,
 	k8sClient client.Client,
 	namespace string,
 	req *requestApplicationCommand,
@@ -332,6 +321,7 @@ func queueJobByRequest(
 	if err != nil {
 		return fmt.Errorf("failed to match actions: %w", err)
 	}
+	logger.Info("action queued", "action.Name", action.Name)
 
 	exist, err := doesJobAlreadyExist(ctx, k8sClient, action, di.Name, namespace)
 	if err != nil {
