@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -111,9 +112,10 @@ func (r *DiscordInteractionReconciler) doReconcile(
 	var commandsConcatenated bytes.Buffer
 	for _, command := range di.Spec.Commands {
 		commandsConcatenated.WriteString(command)
+		commandsConcatenated.WriteByte(0)
 	}
 	currentCommandsHashRaw := sha256.Sum224(commandsConcatenated.Bytes())
-	currentCommandsHash := string(currentCommandsHashRaw[:])
+	currentCommandsHash := hex.EncodeToString(currentCommandsHashRaw[:])
 	annotCommandsHash, ok := di.GetAnnotations()[annotKeyCommands]
 	if !ok || currentCommandsHash != annotCommandsHash {
 		commandsUpdated = true
